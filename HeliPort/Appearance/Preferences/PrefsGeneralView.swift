@@ -63,6 +63,48 @@ class PrefsGeneralView: NSView {
 
         return checkbox
     }()
+    
+    let connectionLabel: NSTextField = {
+        let view = NSTextField(labelWithString: .connection)
+        view.alignment = .right
+        return view
+    }()
+    
+    lazy var enableNotificationsCheckbox: NSButton = {
+        let checkbox = NSButton(checkboxWithTitle: .enableNotifications,
+                                target: self,
+                                action: #selector(checkboxChanged(_:)))
+        checkbox.identifier = .enableNotificationsId
+        checkbox.state = UserDefaults.standard.bool(forKey: .DefaultsKey.enableNotifications) ? .on : .off
+        return checkbox
+    }()
+    
+    lazy var enableAutoConnectCheckbox: NSButton = {
+        let checkbox = NSButton(checkboxWithTitle: .enableAutoConnect,
+                                target: self,
+                                action: #selector(checkboxChanged(_:)))
+        checkbox.identifier = .enableAutoConnectId
+        checkbox.state = UserDefaults.standard.bool(forKey: .DefaultsKey.enableAutoConnect) ? .on : .off
+        return checkbox
+    }()
+    
+    lazy var enableAutoReconnectCheckbox: NSButton = {
+        let checkbox = NSButton(checkboxWithTitle: .enableAutoReconnect,
+                                target: self,
+                                action: #selector(checkboxChanged(_:)))
+        checkbox.identifier = .enableAutoReconnectId
+        checkbox.state = UserDefaults.standard.bool(forKey: .DefaultsKey.enableAutoReconnect) ? .on : .off
+        return checkbox
+    }()
+    
+    lazy var showConnectionDurationCheckbox: NSButton = {
+        let checkbox = NSButton(checkboxWithTitle: .showConnectionDuration,
+                                target: self,
+                                action: #selector(checkboxChanged(_:)))
+        checkbox.identifier = .showConnectionDurationId
+        checkbox.state = UserDefaults.standard.bool(forKey: .DefaultsKey.showConnectionDuration) ? .on : .off
+        return checkbox
+    }()
 
     let gridView: NSGridView = {
         let view = NSGridView()
@@ -81,6 +123,11 @@ class PrefsGeneralView: NSView {
         gridView.addColumn(with: [autoUpdateCheckbox, autoDownloadCheckbox])
         let appearanceRow = gridView.addRow(with: [appearanceLabel, legacyUICheckbox])
         appearanceRow.topPadding = 5
+        
+        let connectionRow = gridView.addRow(with: [connectionLabel])
+        connectionRow.topPadding = 5
+        gridView.addColumn(with: [enableNotificationsCheckbox, enableAutoConnectCheckbox, 
+                                  enableAutoReconnectCheckbox, showConnectionDurationCheckbox])
 
         addSubview(gridView)
         setupConstraints()
@@ -122,6 +169,14 @@ extension PrefsGeneralView {
                     NSApp.restartApp()
                 }
             }
+        case .enableNotificationsId:
+            UserDefaults.standard.set(sender.state == .on, forKey: .DefaultsKey.enableNotifications)
+        case .enableAutoConnectId:
+            UserDefaults.standard.set(sender.state == .on, forKey: .DefaultsKey.enableAutoConnect)
+        case .enableAutoReconnectId:
+            UserDefaults.standard.set(sender.state == .on, forKey: .DefaultsKey.enableAutoReconnect)
+        case .showConnectionDurationId:
+            UserDefaults.standard.set(sender.state == .on, forKey: .DefaultsKey.showConnectionDuration)
         default:
             break
         }
@@ -131,8 +186,11 @@ extension PrefsGeneralView {
 private extension NSUserInterfaceItemIdentifier {
     static let autoUpdateId = NSUserInterfaceItemIdentifier(rawValue: "AutoUpdateCheckbox")
     static let autoDownloadId = NSUserInterfaceItemIdentifier(rawValue: "AutoDownloadCheckbox")
-
     static let legacyUIId = NSUserInterfaceItemIdentifier(rawValue: "legacyUICheckbox")
+    static let enableNotificationsId = NSUserInterfaceItemIdentifier(rawValue: "EnableNotificationsCheckbox")
+    static let enableAutoConnectId = NSUserInterfaceItemIdentifier(rawValue: "EnableAutoConnectCheckbox")
+    static let enableAutoReconnectId = NSUserInterfaceItemIdentifier(rawValue: "EnableAutoReconnectCheckbox")
+    static let showConnectionDurationId = NSUserInterfaceItemIdentifier(rawValue: "ShowConnectionDurationCheckbox")
 }
 
 private extension String {
@@ -142,6 +200,12 @@ private extension String {
 
     static let appearance = NSLocalizedString("Appearance:")
     static let useLegacyUI = NSLocalizedString("Use Legacy UI")
+    
+    static let connection = NSLocalizedString("Connection:")
+    static let enableNotifications = NSLocalizedString("Show connection notifications")
+    static let enableAutoConnect = NSLocalizedString("Automatically connect to saved networks on startup")
+    static let enableAutoReconnect = NSLocalizedString("Automatically reconnect when disconnected")
+    static let showConnectionDuration = NSLocalizedString("Show connection duration in menu")
 
     static let heliportRestart = NSLocalizedString("HeliPort Restart Required")
     static let restartInfoText =

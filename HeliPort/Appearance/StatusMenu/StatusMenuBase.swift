@@ -134,6 +134,7 @@ class StatusMenuBase: NSMenu, NSMenuDelegate {
 
     let bsdItem = HPMenuItem(title: .interfaceName)
     let macItem = HPMenuItem(title: .macAddress)
+    let connectionDurationItem = HPMenuItem(title: .connectionDuration)
     let itlwmVerItem = HPMenuItem(title: .itlwmVer)
 
     let enableLoggingItem = HPMenuItem(title: .enableWiFiLog)
@@ -287,14 +288,17 @@ class StatusMenuBase: NSMenu, NSMenuDelegate {
                 }
             }
 
-            // If not connected, try to connect saved networks
-            var stationInfo = station_info_t()
-            var state: UInt32 = 0
-            var power: Bool = false
-            get_power_state(&power)
-            if get_80211_state(&state) && power &&
-                (state != ITL80211_S_RUN.rawValue || get_station_info(&stationInfo) != KERN_SUCCESS) {
-                NetworkManager.scanSavedNetworks()
+            // If not connected, try to connect saved networks (if auto-connect is enabled)
+            let autoConnectEnabled = UserDefaults.standard.bool(forKey: .DefaultsKey.enableAutoConnect)
+            if autoConnectEnabled {
+                var stationInfo = station_info_t()
+                var state: UInt32 = 0
+                var power: Bool = false
+                get_power_state(&power)
+                if get_80211_state(&state) && power &&
+                    (state != ITL80211_S_RUN.rawValue || get_station_info(&stationInfo) != KERN_SUCCESS) {
+                    NetworkManager.scanSavedNetworks()
+                }
             }
         }
     }
@@ -376,6 +380,7 @@ class StatusMenuBase: NSMenu, NSMenuDelegate {
         var phyMode: String = .unavailable
         var mcsIndex: String = .unavailable
         var nss: String = .unavailable
+        var connectionDuration: String = .unavailable
         var isNetworkConnected = false
     }
 
@@ -431,6 +436,19 @@ class StatusMenuBase: NSMenu, NSMenuDelegate {
         infoOut.phyMode = infoIn.op_mode.description
         infoOut.mcsIndex = "\(infoIn.cur_mcs)"
         infoOut.nss = .unknown
+        
+        // Calculate connection duration
+        if let duration = NetworkManager.getConnectionDuration() {
+            let hours = Int(duration) / 3600
+            let minutes = (Int(duration) % 3600) / 60
+            let seconds = Int(duration) % 60
+            
+            if hours > 0 {
+                infoOut.connectionDuration = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+            } else {
+                infoOut.connectionDuration = String(format: "%02d:%02d", minutes, seconds)
+            }
+        }
 
         return infoOut
     }
@@ -451,6 +469,13 @@ class StatusMenuBase: NSMenu, NSMenuDelegate {
         items.setValueForItem(self.phyModeItem, value: info.phyMode)
         items.setValueForItem(self.mcsIndexItem, value: info.mcsIndex)
         items.setValueForItem(self.nssItem, value: info.nss)
+        
+        // Show connection duration if enabled
+        let showDuration = UserDefaults.standard.bool(forKey: .DefaultsKey.showConnectionDuration)
+        if showDuration {
+            items.setValueForItem(self.connectionDurationItem, value: info.connectionDuration)
+        }
+        self.connectionDurationItem.isHidden = !showDuration
     }
 
     func setCurrentNetworkItem(with info: StationInfo) {
@@ -563,6 +588,7 @@ private extension String {
     static let phyModeStr = NSLocalizedString("    PHY Mode: ")
     static let mcsStr = NSLocalizedString("    MCS Index: ")
     static let nssStr = NSLocalizedString("    NSS: ")
+    static let connectionDuration = NSLocalizedString("    Connection Duration: ")
 }
 
 extension String {

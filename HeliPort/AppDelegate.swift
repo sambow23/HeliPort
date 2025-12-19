@@ -18,6 +18,9 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        
+        // Set default preferences if not set
+        registerDefaultPreferences()
 
         checkRunPath()
         checkAPI()
@@ -46,9 +49,121 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             statusBar.menu = StatusMenuLegacy()
         }
+        
+        // Initialize notification manager (macOS 10.14+)
+        if #available(macOS 10.14, *) {
+            _ = NotificationManager.shared
+        }
+        
+        // Start monitoring connection state for auto-reconnect
+        startConnectionMonitoring()
+        
+        // Automatically connect to saved networks on launch if enabled
+        let autoConnectEnabled = UserDefaults.standard.bool(forKey: .DefaultsKey.enableAutoConnect)
+        if autoConnectEnabled {
+            NetworkManager.scanSavedNetworks()
+        }
+    }
+    
+    private func startConnectionMonitoring() {
+        // Monitor connection state changes for auto-reconnect
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.checkConnectionState()
+        }
+    }
+    
+    private func checkConnectionState() {
+        var state: UInt32 = 0
+        guard get_80211_state(&state), state == ITL80211_S_RUN.rawValue else {
+            handleDisconnection()
+            return
+        }
+        
+        var staInfo = station_info_t()
+        guard get_station_info(&staInfo) == KERN_SUCCESS else { return }
+        
+        let currentSSID = String(ssid: staInfo.ssid)
+        
+        if NetworkManager.lastConnectedSSID != currentSSID {
+            handleNewConnection(ssid: currentSSID)
+        }
+    }
+    
+    private func handleNewConnection(ssid: String) {
+        NetworkManager.lastConnectedSSID = ssid
+        NetworkManager.connectionStartTime = Date()
+        ConnectionHistoryManager.shared.recordConnection(ssid: ssid)
+        Log.debug("Connection established to: \(ssid)")
+    }
+    
+    private func handleDisconnection() {
+        guard let previousSSID = NetworkManager.lastConnectedSSID else { return }
+        
+        let autoReconnectEnabled = UserDefaults.standard.bool(forKey: .DefaultsKey.enableAutoReconnect)
+        
+        ConnectionHistoryManager.shared.recordDisconnection(ssid: previousSSID)
+        if #available(macOS 10.14, *) {
+            NotificationManager.shared.showDisconnection(ssid: previousSSID)
+        }
+        
+        NetworkManager.connectionStartTime = nil
+        NetworkManager.lastConnectedSSID = nil
+        
+        if autoReconnectEnabled {
+            attemptReconnect(to: previousSSID)
+        }
+    }
+    
+    private var reconnectAttempts = 0
+    private var isReconnecting = false
+    private let maxReconnectAttempts = 3
+    
+    private func attemptReconnect(to ssid: String) {
+        guard !isReconnecting && reconnectAttempts < maxReconnectAttempts else { return }
+        
+        isReconnecting = true
+        reconnectAttempts += 1
+        
+        Log.debug("Attempting to reconnect to \(ssid) (attempt \(reconnectAttempts)/\(maxReconnectAttempts))")
+        if #available(macOS 10.14, *) {
+            NotificationManager.shared.showReconnecting(ssid: ssid)
+        }
+        
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            let network = NetworkInfo(ssid: ssid)
+            
+            guard let savedAuth = CredentialsManager.instance.get(network) else {
+                Log.error("No saved credentials for \(ssid)")
+                self?.isReconnecting = false
+                return
+            }
+            
+            network.auth = savedAuth
+            
+            NetworkManager.connect(networkInfo: network, autoConnected: true) { success in
+                if success {
+                    Log.debug("Reconnection successful to \(ssid)")
+                    self?.reconnectAttempts = 0
+                } else {
+                    Log.error("Reconnection failed to \(ssid)")
+                }
+                self?.isReconnecting = false
+            }
+        }
     }
 
     private var drv_info = ioctl_driver_info()
+    
+    private func registerDefaultPreferences() {
+        // Register default values for new preferences
+        let defaults: [String: Any] = [
+            String.DefaultsKey.enableNotifications: true,
+            String.DefaultsKey.enableAutoConnect: true,
+            String.DefaultsKey.enableAutoReconnect: true,
+            String.DefaultsKey.showConnectionDuration: false
+        ]
+        UserDefaults.standard.register(defaults: defaults)
+    }
 
     private func checkDriver() -> Bool {
 

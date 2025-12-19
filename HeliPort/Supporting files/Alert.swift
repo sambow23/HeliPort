@@ -11,14 +11,19 @@ import Foundation
 
 final class Alert {
     private let text: String
+    private let informativeText: String?
 
-    init(text: String) {
+    init(text: String, informativeText: String? = nil) {
         self.text = text
+        self.informativeText = informativeText
     }
 
     func show() {
         let alert = NSAlert()
         alert.messageText = text
+        if let informativeText = informativeText {
+            alert.informativeText = informativeText
+        }
         alert.alertStyle = .critical
 
         if Thread.isMainThread {

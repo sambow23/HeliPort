@@ -173,4 +173,69 @@ class WifiMenuItemViewLegacy: SelectableMenuItemView, WifiMenuItemView {
         menu.cancelTracking()
         menu.performActionForItem(at: menu.index(of: menuItem))
     }
+    
+    override func rightMouseUp(with event: NSEvent) {
+        showContextMenu(at: event.locationInWindow)
+    }
+    
+    private func showContextMenu(at location: NSPoint) {
+        let menu = NSMenu()
+        
+        // Check if network is saved
+        let isSaved = CredentialsManager.instance.getSavedNetworkSSIDs().contains(networkInfo.ssid)
+        
+        if isSaved {
+            let forgetItem = NSMenuItem(title: NSLocalizedString("Forget This Network"), 
+                                       action: #selector(forgetNetwork), 
+                                       keyEquivalent: "")
+            forgetItem.target = self
+            menu.addItem(forgetItem)
+            
+            let autoJoinItem = NSMenuItem(title: NSLocalizedString("Toggle Auto-Join"), 
+                                         action: #selector(toggleAutoJoin), 
+                                         keyEquivalent: "")
+            autoJoinItem.target = self
+            menu.addItem(autoJoinItem)
+        }
+        
+        let copySSIDItem = NSMenuItem(title: NSLocalizedString("Copy Network Name"), 
+                                     action: #selector(copySSID), 
+                                     keyEquivalent: "")
+        copySSIDItem.target = self
+        menu.addItem(copySSIDItem)
+        
+        menu.popUp(positioning: nil, at: location, in: self)
+    }
+    
+    @objc private func forgetNetwork() {
+        let alert = NSAlert()
+        alert.messageText = NSLocalizedString("Forget Network?")
+        alert.informativeText = String(format: NSLocalizedString("Are you sure you want to forget \"%@\"?"), networkInfo.ssid)
+        alert.addButton(withTitle: NSLocalizedString("Forget"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel"))
+        alert.alertStyle = .warning
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            CredentialsManager.instance.remove(networkInfo)
+            Log.debug("Forgot network: \(networkInfo.ssid)")
+            
+            // Refresh the menu
+            enclosingMenuItem?.menu?.cancelTracking()
+        }
+    }
+    
+    @objc private func toggleAutoJoin() {
+        if let storage = CredentialsManager.instance.getStorageFromSsid(networkInfo.ssid) {
+            let newAutoJoin = !storage.autoJoin
+            CredentialsManager.instance.setAutoJoin(networkInfo.ssid, newAutoJoin)
+            Log.debug("Set auto-join for \(networkInfo.ssid) to \(newAutoJoin)")
+        }
+    }
+    
+    @objc private func copySSID() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(networkInfo.ssid, forType: .string)
+        Log.debug("Copied SSID: \(networkInfo.ssid)")
+    }
 }

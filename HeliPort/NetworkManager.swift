@@ -25,14 +25,28 @@ final class NetworkManager {
         ITL80211_SECURITY_WPA2_PERSONAL,
         ITL80211_SECURITY_PERSONAL
     ]
+    
+    // Connection state tracking
+    static var lastConnectedSSID: String?
+    static var connectionStartTime: Date?
+    
+    static func getConnectionDuration() -> TimeInterval? {
+        guard let startTime = connectionStartTime else { return nil }
+        return Date().timeIntervalSince(startTime)
+    }
 
     static func connect(networkInfo: NetworkInfo, saveNetwork: Bool = false,
+                        autoConnected: Bool = false,
                         _ callback: ((_ result: Bool) -> Void)? = nil) {
 
         guard supportedSecurityMode.contains(networkInfo.auth.security) else {
-            let alert = Alert(text: NSLocalizedString("Network security not supported: ")
-                              + networkInfo.auth.security.description)
+            let errorMsg = NSLocalizedString("Network security not supported: ") + networkInfo.auth.security.description
+            let alert = Alert(text: errorMsg)
             alert.show()
+            if #available(macOS 10.14, *) {
+                NotificationManager.shared.showConnectionFailure(ssid: networkInfo.ssid, reason: NSLocalizedString("Unsupported security type"))
+            }
+            ConnectionHistoryManager.shared.recordFailure(ssid: networkInfo.ssid, reason: "Unsupported security")
             return
         }
 
@@ -45,8 +59,28 @@ final class NetworkManager {
                         if savePassword {
                             CredentialsManager.instance.save(networkInfo)
                         }
+                        if #available(macOS 10.14, *) {
+                            NotificationManager.shared.showConnectionSuccess(ssid: networkInfo.ssid, autoConnected: autoConnected)
+                        }
+                        ConnectionHistoryManager.shared.recordConnection(ssid: networkInfo.ssid)
+                        lastConnectedSSID = networkInfo.ssid
+                        connectionStartTime = Date()
                     } else {
-                        Log.error("Failed to connect to: \(networkInfo.ssid)")
+                        let errorReason = determineConnectionError(ssid: networkInfo.ssid, auth: auth)
+                        Log.error("Failed to connect to: \(networkInfo.ssid) - \(errorReason)")
+                        if #available(macOS 10.14, *) {
+                            NotificationManager.shared.showConnectionFailure(ssid: networkInfo.ssid, reason: errorReason)
+                        }
+                        ConnectionHistoryManager.shared.recordFailure(ssid: networkInfo.ssid, reason: errorReason)
+                        
+                        // Show user-friendly alert for manual connections
+                        if !autoConnected {
+                            DispatchQueue.main.async {
+                                let alert = Alert(text: String(format: NSLocalizedString("Failed to connect to \"%@\""), networkInfo.ssid),
+                                                informativeText: errorReason)
+                                alert.show()
+                            }
+                        }
                     }
                     callback?(result)
                 }
@@ -165,7 +199,7 @@ final class NetworkManager {
             let dispatchSemaphore = DispatchSemaphore(value: 0)
             var connected = false
             for network in networks where !connected {
-                connect(networkInfo: network) { (result: Bool) in
+                connect(networkInfo: network, autoConnected: true) { (result: Bool) in
                     connected = result
                     dispatchSemaphore.signal()
                 }
@@ -289,6 +323,26 @@ final class NetworkManager {
         return ipV4 ?? ipV6
     }
 
+    static func determineConnectionError(ssid: String, auth: NetworkAuth) -> String {
+        // Check common connection failure reasons
+        var state: UInt32 = 0
+        get_80211_state(&state)
+        
+        switch state {
+        case ITL80211_S_AUTH.rawValue:
+            return NSLocalizedString("Authentication failed. Check your password.")
+        case ITL80211_S_ASSOC.rawValue:
+            return NSLocalizedString("Association failed. Network may be full or restricted.")
+        case ITL80211_S_SCAN.rawValue:
+            return NSLocalizedString("Network out of range or signal too weak.")
+        default:
+            if !auth.password.isEmpty {
+                return NSLocalizedString("Incorrect password or authentication error.")
+            }
+            return NSLocalizedString("Connection failed. Please try again.")
+        }
+    }
+    
     static func getSecurityType(_ info: ioctl_network_info) -> itl80211_security {
         if info.supported_rsnprotos & ITL80211_PROTO_RSN.rawValue != 0 {
             // WPA2

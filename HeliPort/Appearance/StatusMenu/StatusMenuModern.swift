@@ -64,7 +64,8 @@ final class StatusMenuModern: StatusMenuBase, StatusMenuItems {
         txRateItem,
         phyModeItem,
         mcsIndexItem,
-        nssItem
+        nssItem,
+        connectionDurationItem
     ]
 
     lazy var hiddenItems: [NSMenuItem] = [

@@ -18,6 +18,10 @@ import Foundation
 public extension String {
     enum DefaultsKey {
         static let legacyUI = "legacyUIEnabled"
+        static let enableNotifications = "enableNotifications"
+        static let enableAutoConnect = "enableAutoConnect"
+        static let enableAutoReconnect = "enableAutoReconnect"
+        static let showConnectionDuration = "showConnectionDuration"
     }
 
     init<T>(ssid: T) {
